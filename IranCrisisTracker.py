@@ -159,21 +159,37 @@ mom = (
     .apply(np.prod, raw=True) - 1
 )
 
-latest_mom = mom.iloc[-1].dropna()
-
-# -------------------------------
-# SELECT PORTFOLIO
-# -------------------------------
-top_stocks = latest_mom.nlargest(TOP_N).index.tolist()
-bottom_stocks = latest_mom.nsmallest(BOTTOM_N).index.tolist()
-
 # -------------------------------
 # DAILY RETURNS
 # -------------------------------
 daily_returns = prices.pct_change()
 
-top_port = daily_returns[top_stocks].mean(axis=1)
-bottom_port = daily_returns[bottom_stocks].mean(axis=1)
+# -------------------------------
+# MONTHLY FREEZE -> DAILY TRACKING
+# -------------------------------
+# Use previous month-end MOM scores so each month's portfolio is frozen and
+# then tracked day-by-day for that whole month.
+signal_monthly = mom.shift(1)
+signal_daily = signal_monthly.reindex(daily_returns.index, method="ffill")
+
+top_port = pd.Series(index=daily_returns.index, dtype=float)
+bottom_port = pd.Series(index=daily_returns.index, dtype=float)
+
+for dt in daily_returns.index:
+    scores = signal_daily.loc[dt].dropna()
+    if len(scores) < max(TOP_N, BOTTOM_N):
+        continue
+
+    top_names = scores.nlargest(TOP_N).index
+    bottom_names = scores.nsmallest(BOTTOM_N).index
+
+    top_port.loc[dt] = daily_returns.loc[dt, top_names].mean()
+    bottom_port.loc[dt] = daily_returns.loc[dt, bottom_names].mean()
+
+# Latest month portfolio for display
+latest_signal = signal_daily.dropna(how="all").iloc[-1].dropna()
+top_stocks = latest_signal.nlargest(TOP_N).index.tolist()
+bottom_stocks = latest_signal.nsmallest(BOTTOM_N).index.tolist()
 
 # -------------------------------
 # MOMENTUM HEALTH
